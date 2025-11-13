@@ -15,7 +15,7 @@ class Accelerator extends Module {
 
   val buffer = RegInit(VecInit(Seq.fill(3)(VecInit(Seq.fill(20)(0.U(8.W))))))
 
-  val idle :: initialRead :: computeWrite :: readLine :: done :: Nil = Enum(5)
+  val idle :: initialRead :: firstLineWrite :: computeWrite :: readLine :: lastLineWrite :: done :: Nil = Enum(7)
 
   val line_top = RegInit(0.U(2.W))
   val pxl_idx = RegInit(0.U(5.W))
@@ -25,6 +25,21 @@ class Accelerator extends Module {
 
   val addressRead = RegInit(0.U(16.W))
   val addressWrite = RegInit(0.U(16.W))
+
+  val line_mid = (line_top + 1.U) % 3.U
+  val line_bottom = (line_top + 2.U) % 3.U
+
+  val leftIdx = Mux(pxl_idx === 0.U, 0.U, pxl_idx - 1.U)
+  val rightIdx = Mux(pxl_idx === 19.U, 19.U, pxl_idx + 1.U)
+
+  val whiteCheck =
+    (buffer(line_top)(pxl_idx) === 255.U) &&
+      (buffer(line_mid)(leftIdx) === 255.U) &&
+      (buffer(line_mid)(pxl_idx) === 255.U) &&
+      (buffer(line_mid)(rightIdx) === 255.U) &&
+      (buffer(line_bottom)(pxl_idx) === 255.U)
+
+  io.dataWrite := Mux(whiteCheck, 255.U, 0.U)
 
   io.done := false.B
   io.writeEnable := false.B
@@ -49,7 +64,7 @@ class Accelerator extends Module {
 
       when(lineRead_cnt === 2.U){
         when(pxl_idx === 19.U){
-          state := computeWrite
+          state := firstLineWrite
           pxl_idx := 0.U
           lineRead_cnt := lineRead_cnt + 1.U
         }.otherwise{
@@ -65,12 +80,21 @@ class Accelerator extends Module {
       }
     }
 
+    is(firstLineWrite){
+      io.writeEnable := true.B
+      addressWrite := addressWrite + 1.U
+      io.dataWrite := 0.U
+      when(addressWrite === 419.U){
+        state := computeWrite
+      }
+    }
+
     is(computeWrite){
       io.writeEnable := true.B
       addressWrite := addressWrite + 1.U
       when(pxl_idx === 19.U){
         when(lineRead_cnt === 20.U){
-          state := done
+          state := lastLineWrite
         }.otherwise{
           pxl_idx := 0.U
           state := readLine
@@ -93,27 +117,20 @@ class Accelerator extends Module {
       }
     }
 
+    is(lastLineWrite){
+      io.writeEnable := true.B
+      addressWrite := addressWrite + 1.U
+      io.dataWrite := 0.U
+      when(addressWrite === 799.U){
+        state := done
+      }
+    }
+
     is(done) {
       io.done := true.B
       state := done
     }
   }
-
-
-  val line_mid = (line_top + 1.U) % 3.U
-  val line_bottom = (line_top + 2.U) % 3.U
-
-  val leftIdx = Mux(pxl_idx === 0.U, 0.U, pxl_idx - 1.U)
-  val rightIdx = Mux(pxl_idx === 19.U, 19.U, pxl_idx + 1.U)
-
-  val whiteCheck =
-    (buffer(line_top)(pxl_idx) === 255.U) &&
-      (buffer(line_mid)(leftIdx) === 255.U) &&
-      (buffer(line_mid)(pxl_idx) === 255.U) &&
-      (buffer(line_mid)(rightIdx) === 255.U) &&
-      (buffer(line_bottom)(pxl_idx) === 255.U)
-
-  io.dataWrite := Mux(whiteCheck, 255.U, 0.U)
 }
 
 
