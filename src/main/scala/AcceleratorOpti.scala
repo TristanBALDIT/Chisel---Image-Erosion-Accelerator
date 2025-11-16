@@ -60,27 +60,108 @@ class AcceleratorOpti extends Module {
       }
     }
 
-    is(initialRead) {
-      buffer(lineRead_cnt)(pxl_idx) := io.dataRead(7,0)
-      addressRead := addressRead + 1.U
 
-      when(lineRead_cnt === 2.U){
-        when(pxl_idx === 19.U){
-          state := firstLineWrite
-          pxl_idx := 0.U
-          lineRead_cnt := lineRead_cnt + 1.U
-        }.otherwise{
-          pxl_idx := pxl_idx + 1.U
-        }
+//    is(initialRead) {
+//      buffer(lineRead_cnt)(pxl_idx) := io.dataRead(7,0)
+//      addressRead := addressRead + 1.U
+//
+//      val isLastPixel = pxl_idx === 19.U
+//
+//      // ---- handle state transition (unique part) ----
+//      when(lineRead_cnt === 2.U && isLastPixel) {
+//        state := firstLineWrite
+//      }
+//
+//      // ---- shared index update logic ----
+//      when(isLastPixel) {
+//        pxl_idx := 0.U
+//        lineRead_cnt := lineRead_cnt + 1.U
+//      }.otherwise {
+//        pxl_idx := pxl_idx + 1.U
+//      }
+//    }
+
+    is(initialRead) {
+      val isLastPixel = pxl_idx === 19.U
+      val isBeforeLastPixel = pxl_idx === 18.U
+
+      // DATA STORED
+      buffer(line_top)(pxl_idx) := io.dataRead(7,0)
+
+
+      // 3 LINES READ
+      when((isLastPixel || isBeforeLastPixel) && lineRead_cnt === 2.U){
+        state := firstLineWrite
+      }
+
+      // END OF LINE
+      when(isLastPixel){
+
+        pxl_idx := 0.U
+        line_top := (line_top + 1.U) % 3.U
+        addressRead := addressRead + 1.U
+        lineRead_cnt := lineRead_cnt + 1.U
+
+      // BASE CASE
       }.otherwise{
-        when(pxl_idx === 19.U){
-          pxl_idx := 0.U
-          lineRead_cnt := lineRead_cnt + 1.U
+
+        // TOP RIGHT PIXEL VALUE
+        val topRight = Mux(lineRead_cnt === 0.U, 0.U, buffer(line_bottom)(pxl_idx + 1.U))
+
+        // FORCED JUMP FOR EFFICIENCY
+        when(readJump){
+
+          addressRead := addressRead + 2.U
+          pxl_idx := pxl_idx + 2.U
+          readJump := false.B
+
+        // PIXEL BLACK AND TOP RIGHT WHITE
+        }.elsewhen(io.dataRead(7,0) === 0.U && topRight =/= 255.U){
+
+          buffer(line_top)(pxl_idx+1.U) := 1.U
+          when(isBeforeLastPixel){
+            pxl_idx := 0.U
+            line_top := (line_top + 1.U) % 3.U
+            addressRead := addressRead + 2.U
+            lineRead_cnt := lineRead_cnt + 1.U
+          }.otherwise {
+            addressRead := addressRead + 2.U
+            pxl_idx := pxl_idx + 2.U
+          }
+
+        // PIXEL WHITE
+        }.elsewhen(io.dataRead(7,0) === 255.U) {
+
+          // VALUES OF TOP CHOOSE NEXT READ : TOP,LEFT OR RIGHT
+          switch(buffer(line_bottom)(pxl_idx)) {
+            is(1.U) {
+              state := readAbove
+              addressRead := addressRead - 20.U
+            }
+            is(0.U) { // ... top B : go next pxl
+              addressRead := addressRead + 1.U
+              pxl_idx := pxl_idx + 1.U
+            }
+            is(255.U) { // ... top W :
+              when(buffer(line_top)(pxl_idx - 1.U) === 1.U) { //    -  if left unknow go check
+                addressRead := addressRead - 1.U
+                pxl_idx := pxl_idx - 1.U
+                readJump := true.B
+              }.otherwise { //    -  otherwise go right
+                addressRead := addressRead + 1.U
+                pxl_idx := pxl_idx + 1.U
+              }
+            }
+          }
+
+        // PIXEL BLACK AND TOP RIGHT WHITE
         }.otherwise{
+          addressRead := addressRead + 1.U
           pxl_idx := pxl_idx + 1.U
         }
       }
     }
+
 
     is(firstLineWrite){
       io.writeEnable := true.B
@@ -107,63 +188,71 @@ class AcceleratorOpti extends Module {
     }
 
     is(readLine){
+
+      buffer(line_top)(pxl_idx) := io.dataRead(7,0)
+
+      val topRight = buffer(line_bottom)(pxl_idx + 1.U)
+
+      // END OF LINE
       when(pxl_idx === 19.U){
-        buffer(line_top)(pxl_idx) := io.dataRead(7,0)
+
         pxl_idx := 0.U
         line_top := (line_top + 1.U) % 3.U
         state := computeWrite
         addressRead := addressRead + 1.U
         lineRead_cnt := lineRead_cnt + 1.U
-      }.otherwise{
-        buffer(line_top)(pxl_idx) := io.dataRead(7,0)
 
-        val topRight = buffer(line_bottom)(pxl_idx + 1.U)
+      // FORCED FORWARD JUMP FOR EFFICIENCY
+      }.elsewhen(readJump) {
 
-        when(readJump){                                           // force jump after going back
+        addressRead := addressRead + 2.U
+        pxl_idx := pxl_idx + 2.U
+        readJump := false.B
+
+      // PXL BLACK AND TOP RIGHT NOT WHITE
+      }.elsewhen(io.dataRead(7,0) === 0.U && topRight =/= 255.U) {
+
+        buffer(line_top)(pxl_idx+1.U) := 1.U
+        when(pxl_idx === 18.U){
+          pxl_idx := 0.U
+          line_top := (line_top + 1.U) % 3.U
+          state := computeWrite
+          addressRead := addressRead + 2.U
+          lineRead_cnt := lineRead_cnt + 1.U
+        }.otherwise {
           addressRead := addressRead + 2.U
           pxl_idx := pxl_idx + 2.U
-          readJump := false.B
-        }.otherwise{
-          when(io.dataRead(7,0) === 0.U && topRight =/= 255.U){    // skip and mark next pixel
-            buffer(line_top)(pxl_idx+1.U) := 1.U
-            when(pxl_idx === 18.U){
-              pxl_idx := 0.U
-              line_top := (line_top + 1.U) % 3.U
-              state := computeWrite
-              addressRead := addressRead + 2.U
-              lineRead_cnt := lineRead_cnt + 1.U
-            }.otherwise {
-              addressRead := addressRead + 2.U
-              pxl_idx := pxl_idx + 2.U
-            }
-          }.otherwise{
-            when(io.dataRead(7,0) === 255.U){                     // if white and ...
-              switch(buffer(line_bottom)(pxl_idx)){               // ... top unknown : read top
-                is(1.U){
-                  state := readAbove
-                  addressRead := addressRead - 20.U
-                }
-                is(0.U){                                          // ... top B : go next pxl
-                  addressRead := addressRead + 1.U
-                  pxl_idx := pxl_idx + 1.U
-                }
-                is(255.U){                                        // ... top W :
-                  when(buffer(line_top)(pxl_idx-1.U) === 1.U){    //    -  if left unknow go check
-                    addressRead := addressRead - 1.U
-                    pxl_idx := pxl_idx - 1.U
-                    readJump := true.B
-                  }.otherwise{                                   //    -  otherwise go right
-                    addressRead := addressRead + 1.U
-                    pxl_idx := pxl_idx + 1.U
-                  }
-                }
-              }
-            }.otherwise{
+        }
+
+      // PXL WHITE
+      }.elsewhen(io.dataRead(7,0) === 255.U) {
+
+        // TOP VALUE DECIDE NEXT CHECK
+        switch(buffer(line_bottom)(pxl_idx)){
+          is(1.U){                                          // TOP UNKNOWN : READ TOP
+            state := readAbove
+            addressRead := addressRead - 20.U
+          }
+          is(0.U){                                          // TOP BLACK : READ RIGHT
+            addressRead := addressRead + 1.U
+            pxl_idx := pxl_idx + 1.U
+          }
+          is(255.U){                                        // TOP WHITE :
+            when(buffer(line_top)(pxl_idx-1.U) === 1.U){      //  IF LEFT UNKNOWN GO LEFT
+              addressRead := addressRead - 1.U
+              pxl_idx := pxl_idx - 1.U
+              readJump := true.B
+              }.otherwise{                                   //  OTHERWISE GO RIGHT
               addressRead := addressRead + 1.U
               pxl_idx := pxl_idx + 1.U
             }
           }
         }
+
+      // PIXEL BLACK AND TOP RIGHT WHITE
+      }.otherwise{
+        addressRead := addressRead + 1.U
+        pxl_idx := pxl_idx + 1.U
       }
     }
 
