@@ -26,8 +26,23 @@ class Accelerator extends Module {
   val addressRead = RegInit(0.U(16.W))
   val addressWrite = RegInit(0.U(16.W))
 
-  val line_mid = (line_top + 1.U) % 3.U
-  val line_bottom = (line_top + 2.U) % 3.U
+  val line_mid = Wire(UInt(2.W))
+  val line_bottom = Wire(UInt(2.W))
+
+  switch(line_top) {
+    is(0.U) {
+      line_mid := 1.U
+      line_bottom := 2.U
+    }
+    is(1.U) {
+      line_mid := 2.U
+      line_bottom := 0.U
+    }
+    is(2.U) {
+      line_mid := 0.U
+      line_bottom := 1.U
+    }
+  }
 
   val leftIdx = Mux(pxl_idx === 0.U, 0.U, pxl_idx - 1.U)
   val rightIdx = Mux(pxl_idx === 19.U, 19.U, pxl_idx + 1.U)
@@ -110,7 +125,7 @@ class Accelerator extends Module {
       pxl_idx := pxl_idx + 1.U
       when(pxl_idx === 19.U){
         pxl_idx := 0.U
-        line_top := (line_top + 1.U) % 3.U
+        line_top := Mux(line_top === 2.U, 0.U, line_top + 1.U)
         state := computeWrite
         addressRead := addressRead + 1.U
         lineRead_cnt := lineRead_cnt + 1.U

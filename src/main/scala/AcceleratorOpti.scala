@@ -17,7 +17,7 @@ class AcceleratorOpti extends Module {
 
   val idle :: initialRead :: firstLineWrite :: computeWrite :: readLine :: readAbove :: lastLineWrite :: done :: Nil = Enum(8)
 
-  val line_top = RegInit(0.U(3.W))
+  val line_top = RegInit(0.U(2.W))
   val pxl_idx = RegInit(0.U(5.W))
 
   val lineRead_cnt = RegInit(0.U(5.W))
@@ -26,8 +26,25 @@ class AcceleratorOpti extends Module {
   val addressRead = RegInit(0.U(16.W))
   val addressWrite = RegInit(0.U(16.W))
 
-  val line_mid = (line_top + 1.U) % 3.U
-  val line_bottom = (line_top + 2.U) % 3.U
+  val line_mid = Wire(UInt(2.W))
+  val line_bottom = Wire(UInt(2.W))
+  line_mid := 0.U
+  line_bottom := 0.U
+
+  switch(line_top) {
+    is(0.U) {
+      line_mid := 1.U
+      line_bottom := 2.U
+    }
+    is(1.U) {
+      line_mid := 2.U
+      line_bottom := 0.U
+    }
+    is(2.U) {
+      line_mid := 0.U
+      line_bottom := 1.U
+    }
+  }
 
   val leftIdx = Mux(pxl_idx === 0.U, 0.U, pxl_idx - 1.U)
   val rightIdx = Mux(pxl_idx === 19.U, 19.U, pxl_idx + 1.U)
@@ -60,27 +77,6 @@ class AcceleratorOpti extends Module {
       }
     }
 
-
-//    is(initialRead) {
-//      buffer(lineRead_cnt)(pxl_idx) := io.dataRead(7,0)
-//      addressRead := addressRead + 1.U
-//
-//      val isLastPixel = pxl_idx === 19.U
-//
-//      // ---- handle state transition (unique part) ----
-//      when(lineRead_cnt === 2.U && isLastPixel) {
-//        state := firstLineWrite
-//      }
-//
-//      // ---- shared index update logic ----
-//      when(isLastPixel) {
-//        pxl_idx := 0.U
-//        lineRead_cnt := lineRead_cnt + 1.U
-//      }.otherwise {
-//        pxl_idx := pxl_idx + 1.U
-//      }
-//    }
-
     is(initialRead) {
       val isLastPixel = pxl_idx === 19.U
       val isBeforeLastPixel = pxl_idx === 18.U
@@ -98,7 +94,7 @@ class AcceleratorOpti extends Module {
       when(isLastPixel){
 
         pxl_idx := 0.U
-        line_top := (line_top + 1.U) % 3.U
+        line_top := Mux(line_top === 2.U, 0.U, line_top + 1.U)
         addressRead := addressRead + 1.U
         lineRead_cnt := lineRead_cnt + 1.U
 
@@ -121,7 +117,7 @@ class AcceleratorOpti extends Module {
           buffer(line_top)(pxl_idx+1.U) := 1.U
           when(isBeforeLastPixel){
             pxl_idx := 0.U
-            line_top := (line_top + 1.U) % 3.U
+            line_top := Mux(line_top === 2.U, 0.U, line_top + 1.U)
             addressRead := addressRead + 2.U
             lineRead_cnt := lineRead_cnt + 1.U
           }.otherwise {
@@ -197,7 +193,7 @@ class AcceleratorOpti extends Module {
       when(pxl_idx === 19.U){
 
         pxl_idx := 0.U
-        line_top := (line_top + 1.U) % 3.U
+        line_top := Mux(line_top === 2.U, 0.U, line_top + 1.U)
         state := computeWrite
         addressRead := addressRead + 1.U
         lineRead_cnt := lineRead_cnt + 1.U
@@ -215,7 +211,7 @@ class AcceleratorOpti extends Module {
         buffer(line_top)(pxl_idx+1.U) := 1.U
         when(pxl_idx === 18.U){
           pxl_idx := 0.U
-          line_top := (line_top + 1.U) % 3.U
+          line_top := Mux(line_top === 2.U, 0.U, line_top + 1.U)
           state := computeWrite
           addressRead := addressRead + 2.U
           lineRead_cnt := lineRead_cnt + 1.U
