@@ -570,6 +570,7 @@ class AcceleratorOpti2 extends Module {
           }
         }
       }.elsewhen(readState === extraRightRead){
+        readExtra := true.B
         buffer(line_bottom)(pxl_idx) := io.dataRead(7, 0)
         readState := centerRead
         addressRead := addressRead + 1.U
