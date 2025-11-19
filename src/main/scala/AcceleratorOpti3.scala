@@ -28,7 +28,15 @@ class AcceleratorOpti3 {
     cross_center_x       * 20.U + (cross_center_y + 1.U)  // right
   ))
 
-  val writeCounter = RegInit(0.U(4.W))
+  val cross_addresses_valid = VecInit(Seq(
+    true.B,
+    cross_center_y  > 0.U,
+    cross_center_y < 19.U,
+    cross_center_x > 0.U,
+    cross_center_x < 19.U
+  ))
+
+  val write_idx = RegInit(0.U(4.W))
 
   val idle :: readCenter :: readCross :: writeCross :: Nil = Enum(2)
 
@@ -41,11 +49,15 @@ class AcceleratorOpti3 {
   val bottom = top + 1.U
 
   val buffer_idx = RegInit(8.U(6.W))
+  val initial_buffer_idx = RegInit(8.U(6.W))
+
   val cross_buffer = RegInit(VecInit(Seq.fill(5)(0.U(8.W))))
 
   io.done := false.B
   io.writeEnable := false.B
   io.address := Mux(io.writeEnable, addressWrite, addressRead)
+
+  io.dataWrite := cross_buffer(write_idx)
 
   switch(state){
 
@@ -54,9 +66,13 @@ class AcceleratorOpti3 {
         state := readCenter
         addressRead := 0.U
         addressWrite := 400.U
-        cross_center_x := 18.U
-        cross_center_y := 1.U
+
+        cross_center_x := 16.U
+        cross_center_y := 0.U
+
         buffer_idx := 8.U
+        initial_buffer_idx := 8.U
+
         top := 0.U
       }
     }
@@ -75,9 +91,43 @@ class AcceleratorOpti3 {
     }
 
     is(writeCross){
-      // TODO WRITE 5 CROSS PIXELS
-      when(cross_center_x  < 18.U && cross_center_y < 19.U){
-        cross_center_x := cross_center_x + 2.U
+      // WRITING PROCESS
+      io.writeEnable := true.B
+
+
+      // EXIT STATE
+      when(write_idx === 5.U || (write_idx === 4.U && !cross_addresses_valid(write_idx+1.U))){
+        state := readCenter
+        write_idx := 0.U
+        //CONTINUE DIAGONAL
+        when(cross_center_x  < 18.U && cross_center_y < 19.U){
+          cross_center_x := cross_center_x + 2.U
+          cross_center_y := cross_center_y + 2.U
+
+        // NEW DIAGONAL
+        }.otherwise{
+          // BIGGER DIAGONAL
+          when(cross_center_x - 5.U >= 0.U){
+            cross_center_x := cross_center_x - 5.U
+            buffer_idx := initial_buffer_idx - 1.U
+            initial_buffer_idx := initial_buffer_idx - 2.U
+          // SAME SIZE
+          }.elsewhen(cross_center_x - 1.U >= 0.U && cross_center_y + 2.U < 20.U){
+            cross_center_x := cross_center_x - 1.U
+            cross_center_y := cross_center_y + 2.U
+          // SMALLER DIAG
+          }.otherwise {
+            cross_center_x := cross_center_x + 1.U
+            cross_center_y := cross_center_y + 3.U
+            buffer_idx := initial_buffer_idx + 1.U
+          }
+        }
+
+      // UPDATE WRITING IDX FOR NEXT CYCLE
+      }.elsewhen(cross_addresses_valid(write_idx+1.U)){
+        write_idx := write_idx + 1.U
+      }.otherwise{
+        write_idx := write_idx + 2.U
       }
     }
   }
