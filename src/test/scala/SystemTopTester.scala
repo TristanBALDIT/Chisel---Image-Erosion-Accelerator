@@ -29,6 +29,15 @@ class SystemTopTester extends AnyFlatSpec with ChiselScalatestTester {
           dut.io.testerDataMemDataWrite.poke(image(address))
           dut.clock.step(1)
         }
+
+        for (address <- 400 to image.length - 1 + 400) {
+          dut.io.testerDataMemEnable.poke(true.B)
+          dut.io.testerDataMemWriteEnable.poke(true.B)
+          dut.io.testerDataMemAddress.poke(address)
+          dut.io.testerDataMemDataWrite.poke(255.U)
+          dut.clock.step(1)
+        }
+
         dut.io.testerDataMemEnable.poke(false.B)
         System.out.println("Done!")
 

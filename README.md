@@ -4,7 +4,10 @@
 **Gaspard Deremble** — s251888  
 **Tristan Baldit** — s251525
 
-## Submission 1
+## Submission 2
 
-Here is our first version of the accelerator, using three line buffers along with custom transition logic for data reading.  
-With this approach, we achieved a performance of **646 cycles** on the test cells.
+Here is the second version of our accelerator. This time, the idea is to have virtually a cross-based layout over the image and implemented a diagonal traversal of the cross.
+
+We are still using some buffers to remember data read from previous diagonal / cross.
+
+The accelerator perform the erosion of imageCells in **562** cycles 
