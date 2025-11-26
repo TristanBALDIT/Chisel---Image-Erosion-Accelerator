@@ -1,0 +1,11 @@
+
+
+# Scala Metals artefacts
+
+.bloop
+.bsp
+.metals
+project
+target
+
+.scalafmt.conf
