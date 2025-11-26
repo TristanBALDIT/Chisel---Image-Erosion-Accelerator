@@ -208,179 +208,119 @@ class AcceleratorOpti3 extends Module {
       }
     }
 
-    is(readInnerCross){
+    is(readInnerCross) {
 
-      switch(read_idx){
-        is(1.U){
-          bot_diag_buffers(actual_line)(buffer_idx)(1) := io.dataRead(7,0)
-          previous_cross_buffers(actual_cross)(1) := io.dataRead(7,0)
-        }
-        is(3.U){
-          previous_cross_buffers(actual_cross)(0) := io.dataRead(7,0)
-        }
-        is(4.U){
-          bot_diag_buffers(actual_line)(buffer_idx)(0) := io.dataRead(7,0)
+      // ------------------------------
+      // Helpers
+      // ------------------------------
+
+      def isKnown(x: UInt) = x =/= 1.U
+
+      def isBlack(x: UInt) = x === 0.U
+
+      def setCross(idx: UInt, value: UInt) = {
+        cross_buffer(idx) := value
+        when(isBlack(value)) {
+          cross_buffer(0) := 0.U
         }
       }
 
-      cross_buffer(read_idx) := io.dataRead(7,0)
+      val exitIdx = WireDefault(0.U)
+      val exitState = WireDefault(0.U)
 
-      when(io.dataRead(7,0) === 0.U){
-        cross_buffer(0) := 0.U
-      }
-
-
-      // EXIT STATE
-      when(read_idx === 4.U){
-
-        when(outer_usefull(0) && cross_addresses_valid(5)) {
-          state := readOuterCross
-          read_idx := 5.U
-        }.elsewhen(outer_usefull(1) && cross_addresses_valid(6)) {
-          state := readOuterCross
-          read_idx := 6.U
-        }.elsewhen(outer_usefull(2) && cross_addresses_valid(7)) {
-          state := readOuterCross
-          read_idx := 7.U
-        }.elsewhen(outer_usefull(3) && cross_addresses_valid(8)){
-          state := readOuterCross
-          read_idx := 8.U
-        }.otherwise {
-          state := writeCross
-          read_idx := 0.U
-        }
-
-      // WHEN NEXT IS TOP AND TOP ALREADY KNOWN (FROM PREVIOUS LINE OR PREVIOUS CROSS): SKIP TOP
-      }.elsewhen(read_idx === 1.U && cross_addresses_valid(read_idx+1.U) && (top_actual_diag_buffer(buffer_idx)(0) =/= 1.U || next_cross_buffers(0) =/= 1.U)){
-
-        when(top_actual_diag_buffer(buffer_idx)(0) =/= 1.U){
-          cross_buffer(read_idx + 1.U) := top_actual_diag_buffer(buffer_idx)(0)
-        }.otherwise {
-          cross_buffer(read_idx + 1.U) := next_cross_buffers(0)
-        }
-
-        // SET CENTER TO BLACK IS BLACK LOADED
-        when(top_actual_diag_buffer(buffer_idx)(1) === 0.U || next_cross_buffers(0) === 0.U){
-          cross_buffer(0) := 0.U
-        }
-
-        // SKIP ALSO RIGHT
-        when(cross_addresses_valid(read_idx+2.U) && top_actual_diag_buffer(buffer_idx)(0) =/= 1.U){
-          cross_buffer(read_idx + 2.U) := top_actual_diag_buffer(buffer_idx)(1)
-          previous_cross_buffers(actual_cross)(0) := top_actual_diag_buffer(buffer_idx)(1)
-          // SET CENTER TO BLACK IS BLACK LOADED
-          when(top_actual_diag_buffer(buffer_idx)(1) === 0.U){
-            cross_buffer(0) := 0.U
-          }
-
-          // SKIP ALSO LEFT
-          when(cross_addresses_valid(read_idx+3.U) && next_cross_buffers(1) =/= 1.U ){
-            cross_buffer(read_idx + 3.U)  := next_cross_buffers(1)
-            bot_diag_buffers(actual_line)(buffer_idx)(0) := next_cross_buffers(1)
-
-            when(next_cross_buffers(1) === 0.U){
-              cross_buffer(0) := 0.U
-            }
-
-            // EXIT
-            when(outer_usefull(0) && cross_addresses_valid(5)) {
-              state := readOuterCross
-              read_idx := 5.U
-            }.elsewhen(outer_usefull(1) && cross_addresses_valid(6)) {
-              state := readOuterCross
-              read_idx := 6.U
-            }.elsewhen(outer_usefull(2) && cross_addresses_valid(7)) {
-              state := readOuterCross
-              read_idx := 7.U
-            }.elsewhen(outer_usefull(3) && cross_addresses_valid(8)){
-              state := readOuterCross
-              read_idx := 8.U
-            }.otherwise {
-              state := writeCross
-            }
-
-          }.otherwise{
-            read_idx := read_idx + 3.U
-          }
-        }.otherwise {
-          read_idx := read_idx + 2.U
-        }
-      // WHEN NEXT IS RIGHT AND RIGHT ALREADY KNOWN SKIP RIGHT
-      }.elsewhen(read_idx === 2.U && cross_addresses_valid(read_idx+1.U) && top_actual_diag_buffer(buffer_idx)(0) =/= 1.U){
-        cross_buffer(read_idx + 1.U) := top_actual_diag_buffer(buffer_idx)(1)
-        previous_cross_buffers(actual_cross)(0) := top_actual_diag_buffer(buffer_idx)(1)
-
-        // SET CENTER TO BLACK IS BLACK LOADED
-        when(top_actual_diag_buffer(buffer_idx)(1) === 0.U){
-          cross_buffer(0) := 0.U
-        }
-
-        // SKIP ALSO LEFT
-        when(cross_addresses_valid(read_idx+3.U) && next_cross_buffers(1) =/= 1.U ){
-          cross_buffer(read_idx + 3.U)  := next_cross_buffers(1)
-          bot_diag_buffers(actual_line)(buffer_idx)(0) := next_cross_buffers(1)
-
-          when(next_cross_buffers(1) === 0.U){
-            cross_buffer(0) := 0.U
-          }
-
-          // EXIT
-          when(outer_usefull(0) && cross_addresses_valid(5)) {
-            state := readOuterCross
-            read_idx := 5.U
-          }.elsewhen(outer_usefull(1) && cross_addresses_valid(6)) {
-            state := readOuterCross
-            read_idx := 6.U
-          }.elsewhen(outer_usefull(2) && cross_addresses_valid(7)) {
-            state := readOuterCross
-            read_idx := 7.U
-          }.elsewhen(outer_usefull(3) && cross_addresses_valid(8)){
-            state := readOuterCross
-            read_idx := 8.U
-          }.otherwise {
-            state := writeCross
-          }
-
-        }.otherwise{
-          read_idx := read_idx + 3.U
-        }
-
-      // WHEN NEXT IS LEFT AND LEFT ALREADY KNOWN SKIP LEFT
-      }.elsewhen(cross_addresses_valid(read_idx+3.U) && next_cross_buffers(1) =/= 1.U ){
-        cross_buffer(read_idx + 3.U)  := next_cross_buffers(1)
-        bot_diag_buffers(actual_line)(buffer_idx)(0) := next_cross_buffers(1)
-
-        when(next_cross_buffers(1) === 0.U){
-          cross_buffer(0) := 0.U
-        }
-
-        // EXIT
-        when(outer_usefull(0) && cross_addresses_valid(5)) {
-          state := readOuterCross
-          read_idx := 5.U
-        }.elsewhen(outer_usefull(1) && cross_addresses_valid(6)) {
-          state := readOuterCross
-          read_idx := 6.U
-        }.elsewhen(outer_usefull(2) && cross_addresses_valid(7)) {
-          state := readOuterCross
-          read_idx := 7.U
-        }.elsewhen(outer_usefull(3) && cross_addresses_valid(8)){
-          state := readOuterCross
-          read_idx := 8.U
-        }.otherwise {
-          state := writeCross
-        }
-      // NEXT PIXEL OUTSIDE IMAGE : SKIP
-      }.elsewhen(!cross_addresses_valid(read_idx+1.U) && read_idx < 3.U) {
-        // NEXT NEW PIXEL OUTSIDE IMAGE : SKIP
-        when(!cross_addresses_valid(read_idx+2.U) && read_idx < 2.U){
-          read_idx := read_idx+3.U
-        }
-        read_idx := read_idx+2.U
+      when(outer_usefull(0) && cross_addresses_valid(5)) {
+        exitState := readOuterCross
+        exitIdx := 5.U
+      }.elsewhen(outer_usefull(1) && cross_addresses_valid(6)) {
+        exitState := readOuterCross
+        exitIdx := 6.U
+      }.elsewhen(outer_usefull(2) && cross_addresses_valid(7)) {
+        exitState := readOuterCross
+        exitIdx := 7.U
+      }.elsewhen(outer_usefull(3) && cross_addresses_valid(8)) {
+        exitState := readOuterCross
+        exitIdx := 8.U
       }.otherwise {
-        read_idx := read_idx+1.U
+        exitState := writeCross
+        exitIdx := 0.U
+      }
+
+      val top_top = top_actual_diag_buffer(buffer_idx)(0)
+      val top_right = top_actual_diag_buffer(buffer_idx)(1)
+      val next_top = next_cross_buffers(0)
+      val next_left = next_cross_buffers(1)
+
+
+      val cross_known = VecInit(Seq(
+        false.B,
+        false.B,
+        isKnown(top_top) || isKnown(next_top),
+        isKnown(top_right),
+        isKnown(next_left)
+      ))
+
+      // ------------------------------
+      // State & Idx transition & READ
+      // ------------------------------
+
+      setCross(read_idx, io.dataRead(7, 0))
+
+      when((cross_addresses_valid(read_idx + 1.U) && !cross_known(read_idx + 1.U)) && read_idx < 4.U) {
+        read_idx := read_idx + 1.U
+      }.elsewhen((cross_addresses_valid(read_idx + 2.U) && !cross_known(read_idx + 2.U)) && read_idx < 3.U) {
+        read_idx := read_idx + 2.U
+      }.elsewhen((cross_addresses_valid(read_idx + 3.U) && !cross_known(read_idx + 3.U)) && read_idx < 2.U) {
+        read_idx := read_idx + 3.U
+      }.otherwise {
+        state := exitState
+        read_idx := exitIdx
+        // RESET BUFFER VALUES
+        next_cross_buffers := VecInit(Seq.fill(2)(1.U(8.W)))
+        top_actual_diag_buffer(buffer_idx) := VecInit(Seq.fill(2)(1.U(8.W)))
+      }
+
+      // ------------------------------
+      // Buffer writes by read_idx
+      // ------------------------------
+
+      switch(read_idx) {
+        is(1.U) {
+          bot_diag_buffers(actual_line)(buffer_idx)(1) := io.dataRead(7, 0)
+          previous_cross_buffers(actual_cross)(1) := io.dataRead(7, 0)
+        }
+        is(3.U) {
+          previous_cross_buffers(actual_cross)(0) := io.dataRead(7, 0)
+        }
+        is(4.U) {
+          bot_diag_buffers(actual_line)(buffer_idx)(0) := io.dataRead(7, 0)
+        }
+      }
+
+      // ------------------------------
+      // Buffer read
+      // ------------------------------
+
+      when(cross_known(2.U)) {
+        when(isKnown(top_top)) {
+          setCross(2.U, top_top)
+        }.otherwise {
+          setCross(2.U, next_top)
+        }
+      }
+
+      when(cross_known(3.U)) {
+        setCross(3.U, top_right)
+        previous_cross_buffers(actual_cross)(0) := top_right
+      }
+
+      when(cross_known(4.U)) {
+        setCross(4.U, next_left)
+        bot_diag_buffers(actual_line)(buffer_idx)(0) := next_left
       }
     }
+
+
+
 
     is(readOuterCross){
 
@@ -403,39 +343,59 @@ class AcceleratorOpti3 extends Module {
         cross_buffer(3) := 0.U
       }
 
-      // PIXEL BLACK : UPDATE CROSS BUFFER
-      when(io.dataRead(7,0) === 0.U) {
-        switch(read_idx) {
-          is(5.U) {
+      // PIXEL BLACK : UPDATE CROSS BUFFER AND OTHER BUFFER
+      switch(read_idx) {
+        is(5.U) {
+          when(io.dataRead(7,0) === 0.U) {
             cross_buffer(1) := 0.U
             cross_buffer(4) := 0.U
           }
-          is(6.U) {
+          top_actual_diag_buffer(buffer_idx)(0) := io.dataRead(7,0)
+        }
+        is(6.U) {
+          when(io.dataRead(7,0) === 0.U) {
             cross_buffer(2) := 0.U
             cross_buffer(4) := 0.U
           }
-          is(7.U) {
+        }
+        is(7.U) {
+          when(io.dataRead(7,0) === 0.U) {
             cross_buffer(2) := 0.U
-            cross_buffer(3) := 0.U
-          }
-          is(8.U) {
-            cross_buffer(1) := 0.U
-            cross_buffer(3) := 0.U
-          }
-          is(9.U) {
-            cross_buffer(1) := 0.U
-          }
-          is(10.U) {
-            cross_buffer(4) := 0.U
-          }
-          is(11.U) {
-            cross_buffer(2) := 0.U
-          }
-          is(12.U) {
             cross_buffer(3) := 0.U
           }
         }
+        is(8.U) {
+          when(io.dataRead(7,0) === 0.U) {
+            cross_buffer(1) := 0.U
+            cross_buffer(3) := 0.U
+          }
+          next_cross_buffers(1) := io.dataRead(7,0)
+        }
+        is(9.U) {
+          when(io.dataRead(7,0) === 0.U) {
+            cross_buffer(1) := 0.U
+          }
+          top_actual_diag_buffer(buffer_idx)(1) := io.dataRead(7,0)
+        }
+        is(10.U) {
+          when(io.dataRead(7,0) === 0.U) {
+            cross_buffer(4) := 0.U
+          }
+        }
+        is(11.U) {
+          when(io.dataRead(7,0) === 0.U) {
+            cross_buffer(2) := 0.U
+          }
+        }
+        is(12.U) {
+          when(io.dataRead(7,0) === 0.U) {
+            cross_buffer(3) := 0.U
+          }
+          next_cross_buffers(0) := io.dataRead(7,0)
+        }
       }
+
+
 
       //EXIT
       when(read_idx === 12.U){
