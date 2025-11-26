@@ -167,9 +167,9 @@ class AcceleratorOpti3 extends Module {
       when(io.start) {
         state := State.readCenter
 
-        cross_center_x := 16.U
+        cross_center_x := image_size - 4.U
         cross_center_y := 0.U
-        initial_x      := 16.U
+        initial_x      := image_size - 4.U
         initial_y      := 0.U
 
         buffer_idx         := 6.U
@@ -522,12 +522,12 @@ class AcceleratorOpti3 extends Module {
         write_idx := 6.U
       }.elsewhen(cross_center_y === 1.U && write_idx < 7.U) {
         write_idx := 7.U
-      }.elsewhen(cross_center_x === 18.U && write_idx < 8.U) {
+      }.elsewhen(cross_center_x === image_size - 2.U && write_idx < 8.U) {
         write_idx := 8.U
       }.otherwise {
         state     := State.readCenter
         write_idx := 0.U
-        when(cross_center_x < 18.U && cross_center_y < image_size - 1.U) {
+        when(cross_center_x < image_size - 2.U && cross_center_y < image_size - 1.U) {
           // CONTINUE DIAGONAL
           cross_center_x := cross_center_x + 2.U
           cross_center_y := cross_center_y + 1.U
