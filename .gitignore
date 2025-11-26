@@ -9,3 +9,4 @@ project
 target
 
 .scalafmt.conf
+test_run_dir
