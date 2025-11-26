@@ -13,7 +13,7 @@ class AcceleratorOpti3 extends Module {
 
   })
 
-  val idle :: readCenter :: readInnerCross :: readOuterCross :: writeCross :: done :: Nil = Enum(6)
+  val idle :: setBorder :: readCenter :: readInnerCross :: readOuterCross :: writeCross :: writeCorners :: done :: Nil = Enum(8)
 
   val state = RegInit(idle)
 
@@ -44,6 +44,17 @@ class AcceleratorOpti3 extends Module {
 
   val cross_buffer = RegInit(VecInit(Seq.fill(5)(0.U(8.W))))
 
+  val cornerWrote = RegInit(VecInit(Seq.fill(4)(0.B)))
+
+  val corner_addresses = VecInit(Seq(
+    0.U,
+    19.U,
+    380.U,
+    399.U
+  ))
+
+
+  val allCornerWrote = cornerWrote(0) && cornerWrote(1) && cornerWrote(2) && cornerWrote(3)
 
   val cross_addresses = VecInit(Seq(
     cross_center_y * 20.U + cross_center_x,                 // center
@@ -91,11 +102,24 @@ class AcceleratorOpti3 extends Module {
   io.done := false.B
   io.writeEnable := false.B
 
-  val addressWrite = cross_addresses(write_idx)
+  val addressWrite = Mux(state === writeCorners, corner_addresses(write_idx), cross_addresses(write_idx))
   val addressRead = cross_addresses(read_idx)
   io.address := Mux(io.writeEnable, addressWrite + 400.U, addressRead)
 
-  io.dataWrite := cross_buffer(write_idx)
+  io.dataWrite := Mux(state===setBorder || state===writeCorners, 0.U, cross_buffer(write_idx))
+
+  when(io.writeEnable && addressWrite === 0.U){
+    cornerWrote(0) := true.B
+  }
+  when(io.writeEnable && addressWrite === 19.U){
+    cornerWrote(1) := true.B
+  }
+  when(io.writeEnable && addressWrite === 380.U){
+    cornerWrote(2) := true.B
+  }
+  when(io.writeEnable && addressWrite === 399.U){
+    cornerWrote(3) := true.B
+  }
 
   switch(state){
 
@@ -149,7 +173,18 @@ class AcceleratorOpti3 extends Module {
       io.writeEnable := true.B
 
       // EXIT STATE
-      when(write_idx === 4.U || (write_idx === 3.U && !cross_addresses_valid(write_idx+1.U))){
+      when(write_idx === 4.U && (cross_center_x === 1.U || cross_center_x === 18.U || cross_center_y === 1.U || cross_center_y === 18.U)){
+        state := setBorder
+        when(cross_center_y === 18.U){
+          write_idx := 5.U
+        }.elsewhen(cross_center_x === 1.U){
+          write_idx := 6.U
+        }.elsewhen(cross_center_y === 1.U){
+          write_idx := 7.U
+        }.otherwise{
+          write_idx := 8.U
+        }
+      }.elsewhen(write_idx === 4.U || (write_idx === 3.U && !cross_addresses_valid(write_idx+1.U))){
         state := readCenter
         write_idx := 0.U
         //CONTINUE DIAGONAL
@@ -194,7 +229,20 @@ class AcceleratorOpti3 extends Module {
             buffer_idx := initial_buffer_idx + 1.U
             initial_buffer_idx := initial_buffer_idx + 1.U
           }.otherwise {
-            state := done
+            when(allCornerWrote){
+              state := done
+            }.otherwise{
+              state := writeCorners
+              when(!cornerWrote(0)){
+                write_idx := 0.U
+              }.elsewhen(!cornerWrote(1)){
+                write_idx := 1.U
+              }.elsewhen(!cornerWrote(2)){
+                write_idx := 2.U
+              }.otherwise{
+                write_idx := 3.U
+              }
+            }
           }
         }
 
@@ -421,8 +469,95 @@ class AcceleratorOpti3 extends Module {
       }
     }
 
+    is(setBorder){
+      io.writeEnable := true.B
+
+      when(cross_center_x === 1.U && write_idx < 6.U){
+        write_idx := 6.U
+      }.elsewhen(cross_center_y === 1.U && write_idx < 7.U){
+        write_idx := 7.U
+      }.elsewhen(cross_center_x === 18.U && write_idx < 8.U){
+        write_idx := 8.U
+      }.otherwise{
+        state := readCenter
+        write_idx := 0.U
+        //CONTINUE DIAGONAL
+        when(cross_center_x  < 18.U && cross_center_y < 19.U){
+          cross_center_x := cross_center_x + 2.U
+          cross_center_y := cross_center_y + 1.U
+          buffer_idx := buffer_idx + 1.U
+          actual_cross := !actual_cross
+
+          // NEW DIAGONAL
+        }.otherwise{
+
+          //RESET NEXT BUFFER AND PREVIOUS
+          next_cross_buffers := VecInit(Seq.fill(2)(1.U(8.W)))
+          previous_cross_buffers := VecInit(Seq.fill(2)(VecInit(Seq.fill(2)(1.U(8.W)))))
+          actual_cross := 0.U
+
+          // UPDATE BOT LINE BUFFERS
+          bot_diag_buffers(previous_line) := VecInit(Seq.fill(10)(VecInit(Seq.fill(2)(1.U(8.W)))))
+          actual_line := previous_line
+
+          // BIGGER DIAGONAL
+          when(initial_x >= 5.U){
+            initial_x := initial_x - 5.U
+            cross_center_x := initial_x - 5.U
+            cross_center_y := initial_y
+            buffer_idx := initial_buffer_idx - 2.U
+            initial_buffer_idx := initial_buffer_idx - 2.U
+            // SAME SIZE
+          }.elsewhen(initial_x  >= 1.U && initial_y + 2.U < 20.U){
+            initial_x := initial_x - 1.U
+            initial_y := initial_y + 2.U
+            cross_center_x := initial_x - 1.U
+            cross_center_y := initial_y + 2.U
+            buffer_idx := initial_buffer_idx
+            // SMALLER DIAG
+          }.elsewhen(initial_y + 3.U < 20.U) {
+            initial_x := initial_x + 1.U
+            initial_y := initial_y + 3.U
+            cross_center_x := initial_x + 1.U
+            cross_center_y := initial_y + 3.U
+            buffer_idx := initial_buffer_idx + 1.U
+            initial_buffer_idx := initial_buffer_idx + 1.U
+          }.otherwise {
+            when(allCornerWrote){
+              state := done
+            }.otherwise{
+              state := writeCorners
+              when(!cornerWrote(0)){
+                write_idx := 0.U
+              }.elsewhen(!cornerWrote(1)){
+                write_idx := 1.U
+              }.elsewhen(!cornerWrote(2)){
+                write_idx := 2.U
+              }.otherwise{
+                write_idx := 3.U
+              }
+            }
+          }
+        }
+      }
+    }
+
     is(done){
       io.done := true.B
+    }
+
+    is(writeCorners){
+      io.writeEnable := true.B
+
+      when(!cornerWrote(1) && write_idx =/= 1.U){
+        write_idx := 1.U
+      }.elsewhen(!cornerWrote(2) && write_idx =/= 2.U){
+        write_idx := 2.U
+      }.elsewhen(!cornerWrote(3) && write_idx =/= 3.U){
+        write_idx := 3.U
+      }.otherwise{
+        state := done
+      }
     }
   }
 }
