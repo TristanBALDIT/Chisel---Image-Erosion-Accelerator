@@ -34,8 +34,6 @@ class AcceleratorOpti3 extends Module {
   val initial_x      = RegInit(0.U(6.W))
   val initial_y      = RegInit(0.U(6.W))
 
-  val center_address = cross_center_x * image_size + cross_center_y
-
   val write_idx = RegInit(0.U(4.W))
   val read_idx  = RegInit(0.U(4.W))
 
@@ -88,19 +86,19 @@ class AcceleratorOpti3 extends Module {
 
   val cross_addresses_valid = VecInit(
     Seq(
-      true.B,
-      cross_center_y < image_size - 1.U,
-      cross_center_y > 0.U,
-      cross_center_x < image_size - 1.U,
-      cross_center_x > 0.U,
-      cross_center_y < image_size - 1.U && cross_center_x > 0.U,
-      cross_center_y < image_size - 1.U && cross_center_x < image_size - 1.U,
-      cross_center_y < image_size - 2.U,
-      cross_center_y > 0.U && cross_center_x > 0.U,
-      cross_center_y > 0.U && cross_center_x < image_size - 1.U,
-      cross_center_y > 1.U,
-      cross_center_x < image_size - 2.U,
-      cross_center_x > 1.U
+      true.B,                                                                   // center
+      cross_center_y < image_size - 1.U,                                        // bottom
+      cross_center_y > 0.U,                                                     // top
+      cross_center_x < image_size - 1.U,                                        // right
+      cross_center_x > 0.U,                                                     // left
+      cross_center_y < image_size - 1.U && cross_center_x > 0.U,                // bottom left
+      cross_center_y > 0.U && cross_center_x > 0.U,                             // top left
+      cross_center_y > 0.U && cross_center_x < image_size - 1.U,                // top right
+      cross_center_y < image_size - 1.U && cross_center_x < image_size - 1.U,   // bottom left
+      cross_center_y < image_size - 2.U,                                        // bot bot
+      cross_center_x > 1.U,                                                     // left left
+      cross_center_y > 1.U,                                                     // top top
+      cross_center_x < image_size - 2.U                                         // right right
     )
   )
 
@@ -127,6 +125,14 @@ class AcceleratorOpti3 extends Module {
         && top_actual_diag_buffer(buffer_idx + 1.U)(0) === Color.unknown
         && !(data_read === Color.black && (read_idx === 7.U || read_idx === 8.U))
     )
+  )
+
+  val valid_as_center = VecInit(
+    cross_addresses_valid(1) && cross_addresses_valid(2) && cross_addresses_valid(3) && cross_addresses_valid(4),
+    cross_addresses_valid(5) && cross_addresses_valid(8) && cross_addresses_valid(9),
+    cross_addresses_valid(6) && cross_addresses_valid(7) && cross_addresses_valid(11),
+    cross_addresses_valid(7) && cross_addresses_valid(8) && cross_addresses_valid(12),
+    cross_addresses_valid(5) && cross_addresses_valid(6) && cross_addresses_valid(10)
   )
 
   io.done        := false.B
@@ -196,14 +202,22 @@ class AcceleratorOpti3 extends Module {
 
         // WHITE CENTER : GO READ INNER CROSS
       }.otherwise {
-        cross_buffer(0) := data_read
+        // CENTER CAN BE WHITE ONLY IF ALL INNER PXL EXIST
+        cross_buffer(0) := Mux(valid_as_center(0), data_read ,  Color.black)
         state           := State.readInnerCross
         // IF BOT VALID : FIRST BOT
-        when(cross_addresses_valid(1)) {
-          read_idx := read_idx + 1.U
-          // ELSE GO TOP
+        when(cross_addresses_valid(1) && (valid_as_center(0) || valid_as_center(1))) {
+          read_idx := 1.U
+        // ELSE GO TOP
+        }.elsewhen(cross_addresses_valid(2) && (valid_as_center(0) || valid_as_center(2))) {
+          read_idx := 2.U
+        }.elsewhen(cross_addresses_valid(3) && (valid_as_center(0) || valid_as_center(3))){
+          read_idx := 3.U
+        }.elsewhen(cross_addresses_valid(4) && (valid_as_center(0) || valid_as_center(4))){
+          read_idx := 4.U
         }.otherwise {
-          read_idx := read_idx + 2.U
+          cross_buffer := VecInit(Seq.fill(5)(Color.black))
+          state := State.writeCross
         }
       }
     }
@@ -362,11 +376,11 @@ class AcceleratorOpti3 extends Module {
 
       setCross(read_idx, data_read)
 
-      when((cross_addresses_valid(read_idx + 1.U) && !cross_known(read_idx + 1.U)) && read_idx < 4.U) {
+      when((cross_addresses_valid(read_idx + 1.U) && !cross_known(read_idx + 1.U)) && (valid_as_center(read_idx + 1.U) || valid_as_center(0)) && read_idx < 4.U) {
         read_idx := read_idx + 1.U
-      }.elsewhen((cross_addresses_valid(read_idx + 2.U) && !cross_known(read_idx + 2.U)) && read_idx < 3.U) {
+      }.elsewhen((cross_addresses_valid(read_idx + 2.U) && !cross_known(read_idx + 2.U)) && (valid_as_center(read_idx + 2.U) || valid_as_center(0)) && read_idx < 3.U) {
         read_idx := read_idx + 2.U
-      }.elsewhen((cross_addresses_valid(read_idx + 3.U) && !cross_known(read_idx + 3.U)) && read_idx < 2.U) {
+      }.elsewhen((cross_addresses_valid(read_idx + 3.U) && !cross_known(read_idx + 3.U)) && (valid_as_center(read_idx + 3.U) || valid_as_center(0)) && read_idx < 2.U) {
         read_idx := read_idx + 3.U
       }.otherwise {
         state    := exitState
@@ -395,23 +409,32 @@ class AcceleratorOpti3 extends Module {
       }
 
       // ------------------------------
-      // Buffer read
+      // Buffer read & black assignment
       // ------------------------------
 
-      when(cross_known(2.U)) {
+      when(!valid_as_center(1.U)){
+        cross_buffer(1.U) := Color.black
+      }
+
+      when(!valid_as_center(2.U)){
+        cross_buffer(2) := Color.black
+      }.elsewhen(cross_known(2.U)) {
         when(isKnown(top_top)) {
           setCross(2.U, top_top)
         }.otherwise {
           setCross(2.U, next_top)
         }
       }
-
-      when(cross_known(3.U)) {
+      when(!valid_as_center(3.U)){
+        cross_buffer(3) := Color.black
+      }.elsewhen(cross_known(3.U)) {
         setCross(3.U, top_right)
         previous_cross_buffers(actual_cross)(0) := top_right
       }
 
-      when(cross_known(4.U)) {
+      when(!valid_as_center(4.U)){
+        cross_buffer(4) := Color.black
+      }.elsewhen(cross_known(4.U)) {
         setCross(4.U, next_left)
         bot_diag_buffers(actual_line)(buffer_idx)(0) := next_left
       }
